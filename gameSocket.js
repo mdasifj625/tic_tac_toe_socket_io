@@ -1,136 +1,124 @@
 import {
 	joinGame,
 	playerSymbol,
-	joinOppenent,
-	playerTurn,
+	isOpponentJoined,
+	isYourTurn,
 	changeTurn,
-	PlayerMoves,
+	setPlayerMove,
 	playerDetails,
 	checkValidMove,
-	hasResigned,
-	winningMove,
-	matchDraw,
+	checkAndSetResign,
+	isWinningMove,
+	isMatchDraw,
 	makeWinner,
 	gameOver,
+	getOpponentSocket,
 } from './gameCondition.js';
 const gameSocket = (io) => {
 	io.on('connection', (socket) => {
-		console.log(`New user connected`, socket.id);
+		const socketId = socket.id;
+		console.log(`New user connected`, socketId);
 		//join game for the players
 		joinGame(socket);
-		// check opponent exist for the game to pair.
-		const opponent_connection = joinOppenent(socket);
+
 		// If opponent exists start the game or wait for the opponent to join the game.
-		if (opponent_connection) {
+		if (isOpponentJoined(socketId)) {
+			const opponentSocket = getOpponentSocket(socketId);
 			//Players symbol
-			const player_symbol = playerSymbol(socket); //Player 2
-			const opponent_symbol = playerSymbol(opponent_connection); //Player 1
+			const player_symbol = playerSymbol(socketId); //Player 2
+			const opponent_symbol = playerSymbol(opponentSocket.id); //Player 1
 			//Emit the event to start Player 2 game
 			socket.emit('startGame', {
 				symbol: player_symbol,
 				player: 2,
 			});
 			//Emit the event to start Player 1 game for opponent connection
-			opponent_connection.emit('startGame', {
+			opponentSocket.emit('startGame', {
 				symbol: opponent_symbol,
 				player: 1,
 			});
 		}
 
-		// Wait till openent has has joined the game
+		// Wait till opponent joins
 		else {
 			socket.emit('waitingForJoining');
 		}
 		//when user enters any Number in command line then Emit events
-		socket.on('message', (cmd) => {
-			//To know whether it is chance of the player who is trying to play
-			let turn = playerTurn(socket);
-			//To check whether the game is not over yet
-			if (!gameOver(socket)) {
-				//Wrong player move
-				if (!turn) {
-					socket.emit('gameMove', { ...cmd, turn });
-				}
-				//Right player move
-				else {
-					const opponent_socket = joinOppenent(socket);
-					const move = cmd.cmd.split('\n');
-					//Check whether user is entering a valid key or move
-					const { status, msg } = checkValidMove(socket, move[0]);
-					//When user enters the valid key or move
-					if (!status) {
-						//Set the move in players data
-						PlayerMoves(socket, move[0]);
-						//Chek whether the move played is the winning move
-						if (!winningMove(socket)) {
-							//Check whether the move played is drawing the match
-							if (!matchDraw(socket)) {
-								//Show status of game to both the players
-								socket.emit(
-									'gameStatus',
-									playerDetails(socket)
-								);
-								opponent_socket.emit(
-									'gameStatus',
-									playerDetails(opponent_socket)
-								);
-								const symbol = playerSymbol(opponent_socket);
-								//Display message to both the users letting them know who have the next turn
-								opponent_socket.emit('gameMove', {
-									...cmd,
-									turn,
-									symbol,
-								});
-								socket.emit('waitingGame');
-								//Change Turn of the player
-								changeTurn(socket);
-							} else {
-								socket.emit(
-									'gameStatus',
-									playerDetails(socket)
-								);
-								opponent_socket.emit(
-									'gameStatus',
-									playerDetails(opponent_socket)
-								);
-								socket.emit('gameDraw');
-								opponent_socket.emit('gameDraw');
-							}
-						} else {
-							socket.emit('gameStatus', playerDetails(socket));
-							opponent_socket.emit(
-								'gameStatus',
-								playerDetails(opponent_socket)
-							);
-							socket.emit('gameWon', cmd);
-							opponent_socket.emit('gameWon', cmd);
-						}
-					}
-					//If user has not played valid move i.e 1-9
-					else {
-						//Check whether player has entered r key to resign
-						if (hasResigned(socket, move[0])) {
-							socket.emit('gameLeft');
-							opponent_socket.emit('gameOpponentLeft');
-						} else {
-							socket.emit('gameWrongMove', msg);
-						}
-					}
-				}
+		socket.on('message', ({ enteredValue, player }) => {
+			const opponentSocket = getOpponentSocket(socketId);
+			if (gameOver(socketId)) {
+				return socket.emit('gameOver');
 			}
-			//Game Over
-			else {
-				socket.emit('gameOvar');
+			const turn = isYourTurn(socketId);
+			//Right player move
+			if (turn) {
+				const move = enteredValue;
+				//Check whether user is entering a valid key or move
+				const { validMove, msg } = checkValidMove(socketId, move);
+
+				// When user enters the valid key or move
+				if (validMove) {
+					//Set the move in players data
+					setPlayerMove(socketId, move);
+					//check whether the move played is the winning move
+
+					if (isWinningMove(socketId)) {
+						socket.emit('gameStatus', playerDetails(socketId));
+						opponentSocket.emit(
+							'gameStatus',
+							playerDetails(opponentSocket.id)
+						);
+						socket.emit('gameWon', { player });
+						return opponentSocket.emit('gameWon', { player });
+					}
+
+					//Check whether the move played is drawing the match
+					if (isMatchDraw(socketId)) {
+						socket.emit('gameStatus', playerDetails(socketId));
+						opponentSocket.emit(
+							'gameStatus',
+							playerDetails(opponentSocket.id)
+						);
+						socket.emit('gameDraw');
+						return opponentSocket.emit('gameDraw');
+					}
+					//Show status of game to both the players
+					socket.emit('gameStatus', playerDetails(socketId));
+					opponentSocket.emit(
+						'gameStatus',
+						playerDetails(opponentSocket.id)
+					);
+					const symbol = playerSymbol(opponentSocket.id);
+					//Display message to both the users letting them know who have the next turn
+					opponentSocket.emit('gameMove', {
+						player,
+						turn,
+						symbol,
+					});
+					socket.emit('waitingGame');
+					//Change Turn of the player
+					return changeTurn(socketId);
+				}
+
+				//Check whether player has entered r key to resign
+				if (checkAndSetResign(socketId, move)) {
+					socket.emit('gameLeft');
+					return opponentSocket.emit('gameOpponentLeft');
+				}
+				return socket.emit('gameWrongMove', msg);
 			}
+
+			//Wrong player move
+			socket.emit('gameMove', { turn });
 		});
 		//When users disconnects
 		socket.on('disconnect', () => {
-			const opponent_socket = joinOppenent(socket);
+			const opponent_socket = getOpponentSocket(socketId);
 			opponent_socket.emit('gameOpponentLeftBetween', () => {
 				console.log('Opponent Player has left the game');
 			});
 			//Make winner to the opponent of player who left
-			makeWinner(socket);
+			makeWinner(socketId);
 		});
 	});
 };

@@ -33,186 +33,163 @@ const joinGame = (socket) => {
 		draw: false,
 		left: false,
 	};
-	if (!unmatched) {
-		unmatched = socket.id;
-	} else {
+	if (unmatched) {
 		players[socket.id].symbol = 'O';
 		players[unmatched].opponent = socket.id;
 		players[socket.id].turn = false;
 		unmatched = null;
+	} else {
+		unmatched = socket.id;
 	}
 };
 
-// Function to join openent to play game
-const joinOppenent = (socket) => {
-	if (!players[socket.id].opponent) {
-		return;
-	} else {
-		return players[players[socket.id].opponent].socket;
-	}
+// Function to join opponent to play game
+const isOpponentJoined = (socketId) => {
+	return !!players[socketId].opponent;
 };
 
 // Function to get player symbol
-const playerSymbol = (socket) => {
-	return players[socket.id].symbol;
+const playerSymbol = (socketId) => {
+	return players[socketId].symbol;
 };
 
-// Functio to get player socket
-const playerSocket = (id) => {
-	return players[id].socket;
+// Function to get player socket
+const getOpponentSocket = (socketId) => {
+	return players[players[socketId].opponent].socket;
 };
 
 // Function to return player turn
-const playerTurn = (socket) => {
-	//Send player turn
-	return players[socket.id].turn;
+const isYourTurn = (socketId) => {
+	return players[socketId].turn;
 };
 
 // Function to change the turn of player
-const changeTurn = (socket) => {
-	players[socket.id].turn = false;
-	players[players[socket.id].opponent].turn = true;
+const changeTurn = (socketId) => {
+	players[socketId].turn = false;
+	players[players[socketId].opponent].turn = true;
 };
 
 // Function to set particular move is played
-const PlayerMoves = (socket, move) => {
-	players[socket.id].playerMoves[move - 1] = true;
-	players[players[socket.id].opponent].playerOpponentMoves[move - 1] = true;
+const setPlayerMove = (socketId, move) => {
+	players[socketId].playerMoves[move - 1] = true;
+	players[players[socketId].opponent].playerOpponentMoves[move - 1] = true;
 };
 
 // Function to get all the details of players
-const playerDetails = (socket) => {
-	const { playerMoves, playerOpponentMoves, symbol } = players[socket.id];
-	const opponentSymbol = players[players[socket.id].opponent].symbol;
+const playerDetails = (socketId) => {
+	const { playerMoves, playerOpponentMoves, symbol, opponent } =
+		players[socketId];
+	const opponentSymbol = players[opponent].symbol;
 	return { playerMoves, playerOpponentMoves, symbol, opponentSymbol };
 };
 
 // Function to check if the move is valid or not
-const checkValidMove = (socket, move) => {
-	if (move > 9 || move < 1) {
-		return { status: true, msg: 'Enter any number between 1-9 ' };
-	} else if (
-		players[socket.id].playerMoves[move - 1] === true ||
-		players[socket.id].playerOpponentMoves[move - 1] === true
-	) {
-		return {
-			status: true,
-			msg: 'You have already played, please select another number',
-		};
-	} else if (move <= 9 && move >= 1) {
-		return { status: false, msg: 'Valid move' };
-	} else {
-		return { status: true, msg: 'Please Enter number between 1 - 9 ' };
+const checkValidMove = (socketId, move) => {
+	const playerMoves = players[socketId].playerMoves;
+	const playerOpponentMoves = players[socketId].playerOpponentMoves;
+
+	if (move < 1 || move > 9) {
+		return { validMove: false, msg: 'Enter any number between 1-9' };
 	}
+
+	if (playerMoves[move - 1] || playerOpponentMoves[move - 1]) {
+		return { validMove: false, msg: 'This move is already played' };
+	}
+
+	return { validMove: true, msg: 'Valid move' };
 };
 
 // Function to handle if any player resigns the game
-const hasResigned = (socket, move) => {
+const checkAndSetResign = (socketId, move) => {
+	let isResigned = false;
 	if (move === 'r') {
-		players[players[socket.id].opponent].win = true;
-		return {
-			status: true,
-			msg: 'You won the game!: Openent left the game.',
-		};
+		players[players[socketId].opponent].win = true;
+		isResigned = true;
 	}
+	return isResigned;
 };
 
 // Function for the winning logic of game
-const winningMove = (socket) => {
-	const x1 = players[socket.id].playerMoves[0];
-	const x2 = players[socket.id].playerMoves[1];
-	const x3 = players[socket.id].playerMoves[2];
-	const y1 = players[socket.id].playerMoves[3];
-	const y2 = players[socket.id].playerMoves[4];
-	const y3 = players[socket.id].playerMoves[5];
-	const z1 = players[socket.id].playerMoves[6];
-	const z2 = players[socket.id].playerMoves[7];
-	const z3 = players[socket.id].playerMoves[8];
-	if (x1 === true && x2 === true && x3 === true) {
-		players[socket.id].win = true;
-		return true;
-	} else if (y1 === true && y2 === true && y3 === true) {
-		players[socket.id].win = true;
-		return true;
-	} else if (z1 === true && z2 === true && z3 === true) {
-		players[socket.id].win = true;
-		return true;
-	} else if (x1 === true && y1 === true && z1 === true) {
-		players[socket.id].win = true;
-		return true;
-	} else if (x2 === true && y2 === true && z2 === true) {
-		players[socket.id].win = true;
-		return true;
-	} else if (x3 === true && y3 === true && z3 === true) {
-		players[socket.id].win = true;
-		return true;
-	} else if (x1 === true && y2 === true && z3 === true) {
-		players[socket.id].win = true;
-		return true;
-	} else if (x3 === true && y2 === true && z1 === true) {
-		players[socket.id].win = true;
-		return true;
-	} else {
-		return false;
+const isWinningMove = (socketId) => {
+	const [x1, x2, x3, y1, y2, y3, z1, z2, z3] = players[socketId].playerMoves;
+
+	const winCombinations = [
+		[x1, x2, x3],
+
+		[y1, y2, y3],
+
+		[z1, z2, z3],
+
+		[x1, y1, z1],
+
+		[x2, y2, z2],
+
+		[x3, y3, z3],
+
+		[x1, y2, z3],
+
+		[x3, y2, z1],
+	];
+
+	for (const combination of winCombinations) {
+		if (combination.every((cell) => cell)) {
+			players[socketId].win = true;
+			return true;
+		}
 	}
+
+	return false;
 };
 
 // Function to handle game draw
-const matchDraw = (socket) => {
-	const { playerMoves, playerOpponentMoves } = players[socket.id];
-	let flag = true;
-	playerMoves.map((move, index) => {
-		if (move !== true && playerOpponentMoves[index] !== true) flag = false;
-	});
-	if (flag) {
-		players[players[socket.id].opponent].draw = true;
-		players[socket.id].draw = true;
+const isMatchDraw = (socketId) => {
+	const { playerMoves, playerOpponentMoves, opponent } = players[socketId];
+	let isDraw = false;
+	if (
+		playerMoves.every((move) => move) &&
+		playerOpponentMoves.every((move) => move)
+	) {
+		players[opponent].draw = true;
+		players[socketId].draw = true;
+
+		isDraw = true;
 	}
-	return flag;
+
+	return isDraw;
 };
 
 // Function to set the winner
-const makeWinner = (socket) => {
-	players[players[socket.id].opponent].win = true;
+const makeWinner = (socketId) => {
+	players[players[socketId].opponent].win = true;
 };
 
 // Function to stop the game after win, draw or if someone left the game
-const gameOver = (socket) => {
-	if (
-		players[players[socket.id].opponent].win === true ||
-		players[socket.id].win === true
-	) {
-		return true;
-	}
-	if (
-		players[players[socket.id].opponent].draw === true ||
-		players[socket.id].draw === true
-	) {
-		return true;
-	}
-	if (
-		players[players[socket.id].opponent].left === true ||
-		players[socket.id].left === true
-	) {
-		return true;
-	} else {
-		return false;
-	}
+const gameOver = (socketId) => {
+	const opponent = players[players[socketId].opponent];
+	const player = players[socketId];
+	return [
+		opponent.win,
+		player.win,
+		opponent.draw,
+		player.draw,
+		opponent.left,
+		player.left,
+	].some(Boolean);
 };
 
 export {
 	joinGame,
 	playerSymbol,
-	joinOppenent,
-	playerTurn,
+	isYourTurn,
 	changeTurn,
-	PlayerMoves,
+	setPlayerMove,
 	playerDetails,
 	checkValidMove,
-	hasResigned,
-	winningMove,
-	matchDraw,
+	checkAndSetResign,
+	isWinningMove,
+	isMatchDraw,
 	makeWinner,
 	gameOver,
-	playerSocket,
+	getOpponentSocket,
+	isOpponentJoined,
 };
